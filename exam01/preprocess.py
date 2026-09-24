@@ -3,6 +3,7 @@ import pandas as pd
 from code_maps import CATEGORY_MAPS
 
 FIELDS = ['SYEAR', 'SMONTH', 'SDAY', 'EYEAR', 'EMONTH', 'EDAY', 'SPOT', 'Q6_AR', 'Q6']
+# 변수명에서 여행차수, 방문순서, 항목명을 추출합니다.
 PATTERN = re.compile(r'^D_TRA(\d+)_(\d+)_(.+)$', re.IGNORECASE)
 
 TRIP_FIELDS = {
@@ -23,6 +24,7 @@ code_columns = [
     '숙박시설코드',
 ] + list(TRIP_FIELDS.values()) + list(RESPONDENT_FIELDS.values())
 
+# 코드 열 바로 뒤에 대응하는 명칭 열을 배치합니다.
 OUTPUT_COLUMNS = []
 for column in code_columns:
     OUTPUT_COLUMNS.append(column)
@@ -32,6 +34,7 @@ for column in code_columns:
 
 
 def preprocess(df, id_cols, region_map=None, missing_values=None):
+    # 원자료를 방문지별 한 행으로 변환하고 분석용 정보를 결합합니다.
     ids = validate_input(df, id_cols)
     groups = group_visit_columns(df.columns)
     missing_rules = normalize_missing_values(missing_values)
@@ -59,11 +62,13 @@ def preprocess(df, id_cols, region_map=None, missing_values=None):
 
 
 def normalize_text(series):
+    # 공백과 빈 값을 정리하고 코드 끝의 소수점 이하 0을 제거합니다.
     values = series.astype('string').str.strip()
     return values.mask(values.eq('')).str.replace(r'\.0+$', '', regex=True)
 
 
 def validate_input(df, id_cols):
+    # 식별 열의 존재 여부와 결측값, 중복을 검사합니다.
     ids = [id_cols] if isinstance(id_cols, str) else list(id_cols)
     if not ids or not df.columns.is_unique:
         raise ValueError('식별 열을 지정하고 중복 열 이름을 확인하세요.')
@@ -79,6 +84,7 @@ def validate_input(df, id_cols):
 
 
 def group_visit_columns(columns):
+    # 방문지 변수명을 여행차수와 방문순서별로 묶습니다.
     groups = {}
     for col in columns:
         match = PATTERN.fullmatch(str(col))
@@ -100,6 +106,7 @@ def group_visit_columns(columns):
 
 
 def normalize_missing_values(missing_values):
+    # 사용자가 지정한 결측 코드를 비교 가능한 문자열로 정리합니다.
     rules = {}
     for field, values in (missing_values or {}).items():
         cleaned = normalize_text(pd.Series(values)).dropna()
@@ -108,6 +115,7 @@ def normalize_missing_values(missing_values):
 
 
 def extract_visit_rows(source, ids, mapping, missing_rules):
+    # 방문 정보가 하나라도 있는 행을 추출하고 필요한 항목을 정리합니다.
     slot = pd.DataFrame({f: normalize_text(source[c]) for f, c in mapping.items()})
     for f, sentinels in missing_rules.items():
         if f in slot:
@@ -119,6 +127,7 @@ def extract_visit_rows(source, ids, mapping, missing_rules):
 
 
 def add_visit_dates(block, raw):
+    # 연, 월, 일을 결합하고 유효하지 않은 날짜는 결측값으로 처리합니다.
     result = block.copy()
     for prefix, name in [('S', '방문시작일'), ('E', '방문종료일')]:
         fields = [prefix + suffix for suffix in ['YEAR', 'MONTH', 'DAY']]
@@ -135,6 +144,7 @@ def add_visit_dates(block, raw):
 
 
 def add_region_names(block, raw, region_map):
+    # 방문, 숙박 지역코드를 보존하고 지역명을 연결합니다.
     result = block.copy()
     for field, label in [('SPOT', '방문지역'), ('Q6_AR', '숙박지역')]:
         result[label + '코드'] = raw[field]
@@ -146,6 +156,7 @@ def add_region_names(block, raw, region_map):
 
 
 def add_trip_fields(block, source, trip):
+    # 해당 여행의 유형과 1인 지출비용을 방문 행에 추가합니다.
     result = block.copy()
     for field, label in TRIP_FIELDS.items():
         column = f'D_TRA{trip}_{field}'
@@ -157,6 +168,7 @@ def add_trip_fields(block, source, trip):
 
 
 def add_respondent_fields(block, source):
+    # 응답자의 인구통계 정보를 각 방문 행에 추가합니다.
     result = block.copy()
     for column, label in RESPONDENT_FIELDS.items():
         if column in source.columns:
@@ -167,6 +179,7 @@ def add_respondent_fields(block, source):
 
 
 def add_category_names(block):
+    # 범주형 코드에 대응하는 명칭 열을 추가합니다.
     result = block.copy()
     for code_column, (label, mapping) in CATEGORY_MAPS.items():
         codes = normalize_text(result[code_column])
