@@ -22,7 +22,9 @@ code_columns = [
     '여행차수', '방문순서', '방문시작일', '방문종료일',
     '방문지역코드', '숙박지역코드', '방문지역', '숙박지역',
     '숙박시설코드',
-] + list(TRIP_FIELDS.values()) + list(RESPONDENT_FIELDS.values())
+] + list(TRIP_FIELDS.values()) + [
+    '여행총일수', '여행1인1일지출비용',
+] + list(RESPONDENT_FIELDS.values())
 
 # 코드 열 바로 뒤에 대응하는 명칭 열을 배치합니다.
 OUTPUT_COLUMNS = []
@@ -156,7 +158,7 @@ def add_region_names(block, raw, region_map):
 
 
 def add_trip_fields(block, source, trip):
-    # 해당 여행의 유형과 1인 지출비용을 방문 행에 추가합니다.
+    # 해당 여행의 유형, 지출비용, 총일수와 일당 지출을 방문 행에 추가합니다.
     result = block.copy()
     for field, label in TRIP_FIELDS.items():
         column = f'D_TRA{trip}_{field}'
@@ -164,6 +166,19 @@ def add_trip_fields(block, source, trip):
             result[label] = source.loc[block.index, column]
         else:
             result[label] = pd.NA
+    # S_Day는 박 수이므로 1을 더해 당일 여행도 1일로 계산합니다.
+    column = f'D_TRA{trip}_S_Day'
+    nights = pd.to_numeric(
+        source.loc[block.index, column] if column in source.columns
+        else pd.Series(pd.NA, index=block.index), errors='coerce'
+    ).astype('Float64')
+    valid_nights = nights.ge(0) & nights.lt(float('inf')) & nights.mod(1).eq(0)
+    result['여행총일수'] = nights.where(valid_nights) + 1
+
+    # 원래 지출은 보존하고, 유효한 값으로만 반올림 없이 일당 지출을 계산합니다.
+    cost = pd.to_numeric(result['여행1인지출비용'], errors='coerce').astype('Float64')
+    valid_cost = cost.ge(0) & cost.lt(float('inf'))
+    result['여행1인1일지출비용'] = cost.where(valid_cost) / result['여행총일수']
     return result
 
 
